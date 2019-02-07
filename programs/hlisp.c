@@ -53,6 +53,38 @@ typedef enum type {
     T_LAMBDA
 } Type;
 
+// for peekchar and friends.
+char lastchar;
+
+void putchar(char c)
+{
+	cout(c | 0x80);
+}
+
+char peekchar()
+{
+	if (lastchar == 0) {
+		lastchar = rdkey() & 0x7f;
+		putchar(lastchar);
+	}
+	return lastchar;
+}
+
+char getchar() {
+	if (lastchar != 0) {
+		char c = lastchar;
+		lastchar = 0;
+		return c;
+	}
+	char c = rdkey() & 0x7f;
+	putchar(c);
+	return c;
+}
+
+char ungetc(char c) {
+	lastchar = c;
+}
+
 char heap_mem[16384];
 char *heap; // grows up
 char *heap_end;
@@ -76,7 +108,7 @@ void error(const char *what)
 {
     puts("*** ");
    	puts(what);
-	cout('\n');
+	putchar('\r');
     longjmp(toplevel_escape, 0);
 }
 
@@ -85,6 +117,8 @@ Value *mkpair(Value *, Value *);
 void init()
 {
     int i;
+
+	lastchar = 0;
 
 	heap = &heap_mem[0];
 	heap_end = &heap_mem[sizeof(heap_mem)];
@@ -108,7 +142,7 @@ void init()
 
 void gc()
 {
-    puts("Running gc\n");
+    puts("Running gc\r");
 }
 
 void maybe_gc(size_t nalloc)
@@ -257,31 +291,6 @@ Type gettype(Value *ptr)
     return ptr->type;
 }
 
-char lastchar;
-char peekchar()
-{
-	if (lastchar == 0) {
-		lastchar = rdkey();
-		cout(lastchar);
-	}
-	return lastchar;
-}
-
-char getchar() {
-	if (lastchar != 0) {
-		char c = lastchar;
-		lastchar = 0;
-		return c;
-	}
-	char c = rdkey();
-	cout(c);
-	return c;
-}
-
-char ungetc(char c) {
-	lastchar = c;
-}
-
 int isalpha(char c) {
 	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
@@ -375,12 +384,12 @@ void lwritelambda(Value *ptr)
 void lwrite(Value *);
 void lwritepair(Value *pair)
 {
-	cout('(');
+	putchar('(');
     for (; !LISP_NILP(pair); pair = CDR(pair)) {
         lwrite(CAR(pair));
         if (!LISP_NILP(CDR(pair))) {
             if (gettype(CDR(pair)) == T_PAIR) {
-				cout(' ');
+				putchar(' ');
             } else {
                 // Handle improper lists
                 puts(" . ");
@@ -389,7 +398,7 @@ void lwritepair(Value *pair)
             }
         }
     }
-	cout(')');
+	putchar(')');
 }
 
 void lwrite(Value *ptr)
@@ -451,7 +460,7 @@ Value *apply(Value *proc, Value *args)
 
             // Argument count mismatch?
             if (formal != actual) {
-                error("Argument count mismatch.\n");
+                error("Argument count mismatch.\r");
             }
 
             return eval(proc->lambda.body, call_env);
@@ -570,9 +579,9 @@ int main()
         setjmp(toplevel_escape);
         puts("> ");
         result = eval(lread(), global_env);
-		cout('\n');
+		putchar('\r');
         lwrite(result);
-		cout('\n');
+		putchar('\r');
     }
 
     return 0;

@@ -108,6 +108,7 @@
 #include <sys/fcntl.h>
 #include <termios.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 //6502 defines
 #define UNDOCUMENTED //when this is defined, undocumented opcodes are handled.
@@ -1001,7 +1002,7 @@ uint8_t read6502(uint16_t address) {
 				}
 				break;
 			default:
-				return c;
+				return c | 0x80;
 			}
 		}
 	} else if (address < 0x100) {
@@ -1033,13 +1034,19 @@ void write6502(uint16_t address, uint8_t value) {
 //		fflush(stdout);
 //		return;
 	} else if (address < 0x100) {
-//		printf("wr zp 0x%02x: %02x\n", address, value);
-//		fflush(stdout);
+//		fprintf(stderr, "wr zp 0x%02x: %02x\n", address, value);
+//		fflush(stderr);
 	}
 	memory[address] = value;
 }
 
 int main(int argc, char *argv[]) {
+	// jam random bytes into memory
+	sranddev();
+	for (int i = 0; i < 65536; i++) {
+		memory[i] = (uint8_t)rand();
+	}
+
 	int prog = open(argv[1], O_RDONLY);
 	if (prog == -1) {
 		fprintf(stderr, "failed to open %s\n", argv[1]);
@@ -1113,8 +1120,8 @@ int main(int argc, char *argv[]) {
 		uint32_t st = clockticks6502;
 		uint8_t opc = memory[pc];
 
-//		printf("pc: 0x%04x, a: 0x%02x, x: 0x%02x, y: 0x%02x, s: 0x%02x, p: 0x%02x\n", pc, a, x, y, sp, status);
-//		fflush(stdout);
+//		fprintf(stderr, "pc: 0x%04x, a: 0x%02x, x: 0x%02x, y: 0x%02x, s: 0x%02x, p: 0x%02x\n", pc, a, x, y, sp, status);
+//		fflush(stderr);
 		step6502();
 
 		uint32_t cc = clockticks6502 - st;

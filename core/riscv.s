@@ -178,10 +178,10 @@ tl:	txa
 	; Set vx0 to 0. RISC-V requires that the x0 register is always 0; the simulator implements this by initializing its
 	; virtual registero to 0 and ensuring that it is never written.
 	lda #0
-	ldx #3
-z1:	sta vx0,x
-	dex
-	bpl z1
+	sta vx0
+	sta vx0+1
+	sta vx0+2
+	sta vx0+3
 
 	; Clear the halt flag.
 	sta vhl
@@ -278,7 +278,7 @@ slldone:
 	sta vx0+2,x
 	lda vs1+3
 	rol
-	sta vs1+3,x
+	sta vx0+3,x
 	jmp addpc4
 
 	; sra is the shift kernel for an sra instruction. The contract is the same as that of the other kernels; see

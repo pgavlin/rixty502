@@ -1,4 +1,5 @@
 CC=riscv64-unknown-elf-gcc
+CXX=riscv64-unknown-elf-g++
 CFLAGS=-march=rv32i -mabi=ilp32 -Os -nostdlib -fno-builtin -fno-exceptions
 AS=riscv64-unknown-elf-as
 ASFLAGS=-march=rv32i -mabi=ilp32
@@ -30,16 +31,25 @@ mul.o: libc/mul.S
 	$(AS) $(ASFLAGS) -o $@ $<
 
 ulisp.o: programs/ulisp.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CXX) $(CFLAGS) -c -o $@ $<
 	
 ulisp: ulisp.o init.o div.o
-	$(CC) $(CFLAGS) -T libc/sim.x -o $@ $^
+	$(CXX) $(CFLAGS) -T libc/sim.x -o $@ $^
 
 ulisp.srec: ulisp
 	$(OBJCOPY) -O srec $< $@
 
 ulisp.cc65: ulisp.srec
 	srec-to-cc65 <$< >$@
+
+ulisp.program.o: ulisp.cc65
+	$(AS65) -g -o $@ $<
+
+ulisp.sim.img: riscv.o sim.o core/sim.cfg ulisp.program.o
+	$(LD65) -C core/sim.cfg --dbgfile ulisp.sim.dbg -o $@ riscv.o sim.o ulisp.program.o
+
+ulisp.aiic.img: riscv.o core/aiic.cfg ulisp.program.o
+	$(LD65) -C core/aiic.cfg --dbgfile ulisp.aiic.dbg -o $@ riscv.o ulisp.program.o
 
 hello.o: programs/hello.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -71,8 +81,20 @@ hlisp.program.o: hlisp.cc65
 hlisp.sim.img: riscv.o sim.o core/sim.cfg hlisp.program.o
 	$(LD65) -C core/sim.cfg --dbgfile hlisp.sim.dbg -o $@ riscv.o sim.o hlisp.program.o
 
+hlisp.aiic.img: riscv.o core/aiic.cfg hlisp.program.o
+	$(LD65) -C core/aiic.cfg --dbgfile hlisp.aiic.dbg -o $@ riscv.o hlisp.program.o
+
 sim6502: core/sim6502.c
 	$(HOSTCC) -o $@ $<
+
+miniloader.o: loader/miniloader.s
+	$(AS65) -o $@ $<
+
+miniloader.bin: miniloader.o loader/miniloader.cfg
+	$(LD65) -C loader/miniloader.cfg -o $@ miniloader.o
+
+miniloader.hex: miniloader.bin
+	xxd -g 1 -c 8 $< $@
 
 clean:
 	rm *.o *.srec *.cc65 *.img *.dbg ulisp sim6502 hlisp hello 2>/dev/null || true

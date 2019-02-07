@@ -21,7 +21,7 @@ void puts(char* s) {
 void putint(int n) {
 	char buf[10]; // max 32-bit int is 10 decimal digits
 	if (n < 0) {
-		cout('-');
+		cout('-' | 0x80);
 	}
 	int i = 0;
 	for (; n != 0; n = n / 10) {
@@ -29,6 +29,6 @@ void putint(int n) {
 		buf[i++] = '0' + (n % 10);
 	}
 	while (i > 0) {
-		cout(buf[--i]);
+		cout(buf[--i] | 0x80);
 	}
 }
