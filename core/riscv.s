@@ -153,12 +153,6 @@
 	sta vx0+3,x
 .endmacro
 
-.segment "PROGRAM"
-	.align 4
-program:
-	.dword $00000517   ; auipc a0, 0x0 ; load the PC into a0
-	.dword $00000004   ; invalid
-
 .segment "CORE"
 	; start is the entrypoint for the simulator. It is responsible for initializing the simulator's state and running
 	; to the target program.
@@ -193,6 +187,7 @@ z1:	sta vx0,x
 	sta vhl
 
 	; Load the reset vector into the PC and go.
+	.import program
 	lda #<program
 	sta vpc
 	lda #>program
@@ -511,6 +506,8 @@ stop:
 	dey
 	lda (vpc),y
 	sta vin
+
+	sta $e001
 
 	; Mask off all but the opcode bits. For RV32I, the low two bits will always be set, so we take the liberty of
 	; ignoring them. Conveniently, the result of the mask is suitable as a branch offset into the instruction dispatch
