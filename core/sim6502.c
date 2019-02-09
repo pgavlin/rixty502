@@ -978,21 +978,23 @@ void hookexternal(void *funcptr) {
 static uint8_t memory[65536];
 static uint32_t profile[65536];
 static uint64_t cycles[65536];
+static int riscv_instructions;
+static int riscv_instruction_trapped;
 enum {
 	STDIO = 0xe000,
 	TRAP = 0xe001,
+	INST = 0xe002,
 };
 
 uint8_t read6502(uint16_t address) {
 	if (address == STDIO) {
 		for (;;) {
 			int c = (uint8_t)getchar();
-			uint32_t* vs = (uint32_t*)memory;
 			switch (c) {
 			case '`':
 				printf("6502 cycles: %d\n", clockticks6502);
 				printf("6502 instrs: %d\n", instructions);
-				printf("RISCV instrs: %d\n", vs[1]);
+				printf("RISCV instrs: %d\n", riscv_instructions);
 				break;
 			case '~':
 				for (int i = 0; i < 65536; i++) {
@@ -1002,9 +1004,15 @@ uint8_t read6502(uint16_t address) {
 				}
 				break;
 			default:
+				if (c == '\n') {
+					c = '\r';
+				}
 				return c | 0x80;
 			}
 		}
+	} else if (address == INST) {
+		riscv_instruction_trapped = 1;
+		riscv_instructions++;
 	} else if (address < 0x100) {
 //		printf("rd zp 0x%02x: %02x\n", address, memory[address]);
 	}
@@ -1041,6 +1049,9 @@ void write6502(uint16_t address, uint8_t value) {
 }
 
 int main(int argc, char *argv[]) {
+	// reset the RISCV instruction count
+	riscv_instructions = 0;
+
 	// jam random bytes into memory
 	sranddev();
 	for (int i = 0; i < 65536; i++) {
@@ -1120,9 +1131,17 @@ int main(int argc, char *argv[]) {
 		uint32_t st = clockticks6502;
 		uint8_t opc = memory[pc];
 
+		riscv_instruction_trapped = 0;
+
 //		fprintf(stderr, "pc: 0x%04x, a: 0x%02x, x: 0x%02x, y: 0x%02x, s: 0x%02x, p: 0x%02x\n", pc, a, x, y, sp, status);
 //		fflush(stderr);
 		step6502();
+
+		if(riscv_instruction_trapped) {
+			instructions--;
+			clockticks6502 = st;
+			continue;
+		}
 
 		uint32_t cc = clockticks6502 - st;
 		for (int i = 0; i <= current_subroutine; i++) {
@@ -1156,6 +1175,11 @@ int main(int argc, char *argv[]) {
 //		uint64_t e = s + cc * 978 * info.denom / info.numer;
 //		while (mach_absolute_time() < e);
 	}
+
+	printf("\n");
+	printf("6502 cycles: %d\n", clockticks6502);
+	printf("6502 instrs: %d\n", instructions);
+	printf("RISCV instrs: %d\n", riscv_instructions);
 
 	tcsetattr(STDIN_FILENO, TCSADRAIN, &termios);
 	return a;

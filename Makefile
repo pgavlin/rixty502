@@ -12,89 +12,127 @@ HOSTCC=clang
 
 .PHONY: clean
 
-riscv.o: core/riscv.s
+all: bin/sim6502 bin/riscv.aiic.bin bin/disas.aiic.bin bin/disas.sim.img
+
+build/riscv.o: core/riscv.s
 	$(AS65) -g -o $@ $<
 
-sim.o: core/sim.s
+build/riscv.sim.o: core/riscv.s
+	$(AS65) -g -o $@ -D simulator=1 $<
+
+build/sim.o: core/sim.s
 	$(AS65) -g -o $@ $<
 
-init.o: libc/init.s
+bin/riscv.aiic.bin: build/riscv.o
+	$(LD65) -C core/aiic.cfg -o $@ -D program=0x4000 $<
+
+build/init.o: libc/init.s
 	$(AS) $(ASFLAGS) -o $@ $<
 
-div.o: libc/div.S
+build/div.o: libc/div.S
 	$(AS) $(ASFLAGS) -o $@ $<
 
-io.o: libc/io.c
+build/io.o: libc/io.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-mul.o: libc/mul.S
+build/mul.o: libc/mul.S
 	$(AS) $(ASFLAGS) -o $@ $<
 
-ulisp.o: programs/ulisp.c
+build/ulisp.o: programs/ulisp.c
 	$(CXX) $(CFLAGS) -c -o $@ $<
 	
-ulisp: ulisp.o init.o div.o
+bin/ulisp: build/ulisp.o build/init.o build/div.o
 	$(CXX) $(CFLAGS) -T libc/sim.x -o $@ $^
 
-ulisp.srec: ulisp
+build/ulisp.srec: bin/ulisp
 	$(OBJCOPY) -O srec $< $@
 
-ulisp.cc65: ulisp.srec
-	srec-to-cc65 <$< >$@
-
-ulisp.program.o: ulisp.cc65
-	$(AS65) -g -o $@ $<
-
-ulisp.sim.img: riscv.o sim.o core/sim.cfg ulisp.program.o
-	$(LD65) -C core/sim.cfg --dbgfile ulisp.sim.dbg -o $@ riscv.o sim.o ulisp.program.o
-
-ulisp.aiic.img: riscv.o core/aiic.cfg ulisp.program.o
-	$(LD65) -C core/aiic.cfg --dbgfile ulisp.aiic.dbg -o $@ riscv.o ulisp.program.o
-
-hello.o: programs/hello.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-hello: hello.o io.o init.o
-	$(CC) $(CFLAGS) -T libc/sim.x -o $@ $^
-
-hello.srec: hello
-	$(OBJCOPY) -O srec $< $@
-
-hello.cc65: hello.srec
-	srec-to-cc65 <$< >$@
-
-hlisp.o: programs/hlisp.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-hlisp: hlisp.o io.o init.o div.o mul.o
-	$(CC) $(CFLAGS) -T libc/sim.x -o $@ $^
-
-hlisp.srec: hlisp
-	$(OBJCOPY) -O srec $< $@
-
-hlisp.cc65: hlisp.srec
+build/ulisp.cc65: build/ulisp.srec
 	srec-to-cc65 -start 0x4000 <$< >$@
 
-hlisp.program.o: hlisp.cc65
+build/ulisp.program.o: build/ulisp.cc65
 	$(AS65) -g -o $@ $<
 
-hlisp.sim.img: riscv.o sim.o core/sim.cfg hlisp.program.o
-	$(LD65) -C core/sim.cfg --dbgfile hlisp.sim.dbg -o $@ riscv.o sim.o hlisp.program.o
+bin/ulisp.sim.img: build/riscv.sim.o build/sim.o core/sim.cfg build/ulisp.program.o
+	$(LD65) -C core/sim.cfg --dbgfile bin/ulisp.sim.dbg -o $@ build/riscv.sim.o build/sim.o build/ulisp.program.o
 
-hlisp.aiic.img: riscv.o core/aiic.cfg hlisp.program.o
-	$(LD65) -C core/aiic.cfg --dbgfile hlisp.aiic.dbg -o $@ riscv.o hlisp.program.o
+bin/ulisp.aiic.bin: core/aiic.cfg build/ulisp.program.o
+	$(LD65) -C core/aiic.cfg --dbgfile bin/ulisp.aiic.dbg -o $@ build/ulisp.program.o
 
-sim6502: core/sim6502.c
+build/hello.o: programs/hello.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+bin/hello: build/hello.o build/init.o
+	$(CC) $(CFLAGS) -T libc/sim.x -o $@ $^
+
+build/hello.srec: bin/hello
+	$(OBJCOPY) -O srec $< $@
+
+build/hello.cc65: build/hello.srec
+	srec-to-cc65 -start 0x4000 <$< >$@
+
+build/hello.program.o: build/hello.cc65
+	$(AS65) -g -o $@ $<
+
+bin/hello.sim.img: build/riscv.sim.o build/sim.o core/sim.cfg build/hello.program.o
+	$(LD65) -C core/sim.cfg --dbgfile bin/hello.sim.dbg -o $@ build/riscv.sim.o build/sim.o build/hello.program.o
+
+bin/hello.aiic.bin: core/aiic.cfg build/hello.program.o
+	$(LD65) -C core/aiic.cfg --dbgfile bin/hello.aiic.dbg -o $@ build/hello.program.o
+
+build/hlisp.o: programs/hlisp.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+bin/hlisp: build/hlisp.o build/io.o build/init.o build/div.o build/mul.o
+	$(CC) $(CFLAGS) -T libc/sim.x -o $@ $^
+
+build/hlisp.srec: bin/hlisp
+	$(OBJCOPY) -O srec $< $@
+
+build/hlisp.cc65: build/hlisp.srec
+	srec-to-cc65 -start 0x4000 <$< >$@
+
+build/hlisp.program.o: build/hlisp.cc65
+	$(AS65) -g -o $@ $<
+
+bin/hlisp.sim.img: build/riscv.sim.o build/sim.o core/sim.cfg build/hlisp.program.o
+	$(LD65) -C core/sim.cfg --dbgfile bin/hlisp.sim.dbg -o $@ build/riscv.sim.o build/sim.o build/hlisp.program.o
+
+bin/hlisp.aiic.bin: core/aiic.cfg build/hlisp.program.o
+	$(LD65) -C core/aiic.cfg --dbgfile bin/hlisp.aiic.dbg -o $@ build/hlisp.program.o
+
+build/disas.o: programs/riscv-disas.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+bin/disas: build/disas.o build/init.o build/div.o build/mul.o
+	$(CC) $(CFLAGS) -T libc/sim.x -o $@ $^
+
+build/disas.srec: bin/disas
+	$(OBJCOPY) -O srec $< $@
+
+build/disas.cc65: build/disas.srec
+	srec-to-cc65 -start 0x4000 <$< >$@
+
+build/disas.program.o: build/disas.cc65
+	$(AS65) -g -o $@ $<
+
+bin/disas.sim.img: build/riscv.sim.o build/sim.o core/sim.cfg build/disas.program.o
+	$(LD65) -C core/sim.cfg --dbgfile bin/disas.sim.dbg -o $@ build/riscv.sim.o build/sim.o build/disas.program.o
+
+bin/disas.aiic.bin: core/aiic.cfg build/disas.program.o
+	$(LD65) -C core/aiic.cfg --dbgfile bin/disas.aiic.dbg -o $@ build/disas.program.o
+
+bin/sim6502: core/sim6502.c
 	$(HOSTCC) -o $@ $<
 
-miniloader.o: loader/miniloader.s
+build/miniloader.o: loader/miniloader.s
 	$(AS65) -o $@ $<
 
-miniloader.bin: miniloader.o loader/miniloader.cfg
-	$(LD65) -C loader/miniloader.cfg -o $@ miniloader.o
+build/miniloader: build/miniloader.o loader/miniloader.cfg
+	$(LD65) -C loader/miniloader.cfg -o $@ build/miniloader.o
 
-miniloader.hex: miniloader.bin
+bin/miniloader.hex: build/miniloader
 	xxd -g 1 -c 8 $< $@
 
 clean:
-	rm *.o *.srec *.cc65 *.img *.dbg ulisp sim6502 hlisp hello 2>/dev/null || true
+	rm bin/* build/* 2>/dev/null || true
