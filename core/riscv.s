@@ -17,7 +17,6 @@
 	vpc = $00 ; The virtual program counter holds the RISCV address of the currently executing instruction.
 	vin = $04 ; The virtual instruction register holds the currently executing instruction.
 	vf3 = $08 ; vf3 corresponds to the `funct3` field of the RISCV R-, I-, and S-type instruction formats.
-	vhl = $09 ; vhl halts the RISCV core if it is non-zero.
 	vs1 = $0c ; vs1 operates as the first operand and 4-byte accumulator for many internal ALU operations.
 	vs2 = $10 ; vs2 operates as the second operand for many internal ALU operations.
 
@@ -153,7 +152,7 @@
 	sta vx0+3,x
 .endmacro
 
-.segment "CORE"
+.segment "CODE"
 	; start is the entrypoint for the simulator. It is responsible for initializing the simulator's state and running
 	; to the target program.
 .proc start
@@ -183,9 +182,6 @@ tl:	txa
 	sta vx0+2
 	sta vx0+3
 
-	; Clear the halt flag.
-	sta vhl
-
 	; Load the reset vector into the PC and go.
 	.import program
 	lda #<program
@@ -196,14 +192,6 @@ tl:	txa
 	brk
 .endproc
 .export start
-
-	; halt may be called by the running program to halt the simulator.
-.proc halt
-	; Set the halt flag and return.
-	lda #1
-	sta vhl
-	rts
-.endproc
 
 	; The following section contains the implementation of the various ALU operations required by the RISC-V
 	; specification. These operations expect the offset of their first operand in Y, the value of their second operand
@@ -476,20 +464,15 @@ sra31:
 	jmp addpc4
 .endproc
 
-	; stop is in fact part of the run function below. It is laid out immediately prior to that function's entry point
-	; so that run can make a short backwards branch if the halt flag is set and fall through in if it is unset. This
-	; branch straightening saves 1-2 cycles in the common case that halt is unset.
-stop:
-	rts
-
 	; run is the main loop of the simulator. It is responsible for fetching the next instruction to execute, decoding
 	; its opcode field, and dispatching exeucution to the correct handler.
 	;
 	; The speed of the simulator depends on this loop being as tight as possible.
 .proc run
-	; If the halt flg is set, return.
-	lda vhl
-	bne stop
+	; If we're targeting the simulator, let it know we've begun an instruction.
+.if .defined(simulator)
+	lda $e002
+.endif
 
 	; Otherwise. copy the next instruction to execute into the instruction register (vin). This copy is done from most-
 	; to least-significant byte so that the last load leaves the byte that contains the opcode in A.
@@ -506,8 +489,6 @@ stop:
 	dey
 	lda (vpc),y
 	sta vin
-
-	sta $e001
 
 	; Mask off all but the opcode bits. For RV32I, the low two bits will always be set, so we take the liberty of
 	; ignoring them. Conveniently, the result of the mask is suitable as a branch offset into the instruction dispatch
@@ -661,7 +642,7 @@ skip:
 
 	; opinv is the implementation of an invalid opcode. An invalid opcode will halt the simulator.
 .proc opinv
-	jmp halt
+	rts
 .endproc
 
 	; oplx implements the LOAD group.
