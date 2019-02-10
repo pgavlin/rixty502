@@ -29,6 +29,7 @@ void putint(int i);
 
 typedef struct value {
     uint8_t type;
+    uint8_t flags;
     union {
         int int_;
         char sym[1];
@@ -53,36 +54,40 @@ typedef enum type {
     T_LAMBDA
 } Type;
 
+enum flags {
+    F_HEX = 0x01,
+};
+
 // for peekchar and friends.
 char lastchar;
 
 void putchar(char c)
 {
-	cout(c | 0x80);
+    cout(c | 0x80);
 }
 
 char peekchar()
 {
-	if (lastchar == 0) {
-		lastchar = rdkey() & 0x7f;
-		putchar(lastchar);
-	}
-	return lastchar;
+    if (lastchar == 0) {
+        lastchar = rdkey() & 0x7f;
+        putchar(lastchar);
+    }
+    return lastchar;
 }
 
 char getchar() {
-	if (lastchar != 0) {
-		char c = lastchar;
-		lastchar = 0;
-		return c;
-	}
-	char c = rdkey() & 0x7f;
-	putchar(c);
-	return c;
+    if (lastchar != 0) {
+        char c = lastchar;
+        lastchar = 0;
+        return c;
+    }
+    char c = rdkey() & 0x7f;
+    putchar(c);
+    return c;
 }
 
 char ungetc(char c) {
-	lastchar = c;
+    lastchar = c;
 }
 
 char heap_mem[16384];
@@ -107,8 +112,8 @@ jmp_buf toplevel_escape;
 void error(const char *what)
 {
     puts("*** ");
-   	puts(what);
-	putchar('\r');
+       puts(what);
+    putchar('\r');
     longjmp(toplevel_escape, 0);
 }
 
@@ -118,10 +123,10 @@ void init()
 {
     int i;
 
-	lastchar = 0;
+    lastchar = 0;
 
-	heap = &heap_mem[0];
-	heap_end = &heap_mem[sizeof(heap_mem)];
+    heap = &heap_mem[0];
+    heap_end = &heap_mem[sizeof(heap_mem)];
 
     for (i = 0; i < SYMBOL_TABLE_SIZE; i++) {
         syms[i] = LISP_NIL;
@@ -174,8 +179,16 @@ Value *mkint(int v)
     maybe_gc(nalloc);
     p = (Value *) heap;
     p->type = T_INT;
+    p->flags = 0;
     p->int_ = v;
     heap += nalloc;
+    return p;
+}
+
+Value *mkhex(int v)
+{
+    Value* p = mkint(v);
+    p->flags = F_HEX;
     return p;
 }
 
@@ -208,44 +221,44 @@ Value *mklambda(Value *args, Value *body, Value *env)
 }
 
 char tolower(char c) {
-	if (c >= 'A' && c <= 'Z') {
-		return c + 32;
-	}
-	return c;
+    if (c >= 'A' && c <= 'Z') {
+        return c + 32;
+    }
+    return c;
 }
 
 int strcasecmp(const char* s0, const char *s1) {
-	int i = 0;
-	for (;;) {
-		char c0 = s0[i], c1 = s1[i];
-		if (c0 != c1) {
-			c0 = tolower(c0), c1 = tolower(c1);
-			if (c0 != c1) {
-				return c0 > c1;
-			}
-		}
-		if (c0 == '\0') {
-			return 0;
-		}
-		i++;
-	}
+    int i = 0;
+    for (;;) {
+        char c0 = s0[i], c1 = s1[i];
+        if (c0 != c1) {
+            c0 = tolower(c0), c1 = tolower(c1);
+            if (c0 != c1) {
+                return c0 > c1;
+            }
+        }
+        if (c0 == '\0') {
+            return 0;
+        }
+        i++;
+    }
 }
 
 void strcpy(char* dest, const char* src) {
-	for (int i = 0; ; i++) {
-		dest[i] = src[i];
-		if (src[i] == '\0') {
-			break;
-		}
-	}
+    for (int i = 0; ; i++) {
+        dest[i] = src[i];
+        if (src[i] == '\0') {
+            break;
+        }
+    }
 }
 
 size_t strlen(const char* c) {
-	for (size_t l = 0; ; l++) {
-		if (c[l] == '\0') {
-			return l;
-		}
-	}
+    for (size_t l = 0; ; l++) {
+        if (c[l] == '\0') {
+            return l;
+        }
+    }
 }
 
 uint8_t gethash(const char *);
@@ -292,15 +305,15 @@ Type gettype(Value *ptr)
 }
 
 int isalpha(char c) {
-	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
 int isdigit(char c) {
-	return (c >= '0' && c <= '9');
+    return (c >= '0' && c <= '9');
 }
 
 int isspace(char c) {
-	return c == ' ' || c == '\n' || c == '\r' || c == '\t';
+    return c == ' ' || c == '\n' || c == '\r' || c == '\t';
 }
 
 Value *lreadsym()
@@ -324,6 +337,30 @@ Value *lreadint()
         v = v*10 + (ch - '0');
     }
     ungetc(ch);
+    return mkint(v);
+}
+
+Value *lreadhex()
+{
+    // clear the '$'
+    getchar();
+
+    int v = 0;
+    for (;;) {
+        int d = 0;
+        char ch = getchar();
+        if (ch >= '0' && ch <= '9') {
+            d = ch - '0';
+        } else if (ch >= 'A' && ch <= 'F') {
+            d = ch - 'A' + 10;
+        } else if (ch >= 'a' && ch <= 'f') {
+            d = ch - 'a' + 10;
+        } else {
+            ungetc(ch);
+            break;
+        }
+        v = (v << 4) | d;
+    }
     return mkint(v);
 }
 
@@ -351,6 +388,7 @@ Value *lread()
     ungetc(ch);
     if (isalpha(ch)) return lreadsym();
     else if (isdigit(ch)) return lreadint();
+    else if (ch == '$') return lreadhex();
     else if (ch == '(') { getchar(); return lreadlist(); }
     else if (ch == '\'')  {
         getchar();
@@ -361,14 +399,38 @@ Value *lread()
     }
 }
 
+void puthex(int v)
+{
+    char buf[8]; // max 32-bit int is 8 hex digits
+    int i = 0;
+    do {
+        int d = v & 0xf;
+        if (d < 10) {
+            buf[i++] = '0' + d;
+        } else {
+            buf[i++] = 'A' + d - 10;
+        }
+        v >>= 4;
+    } while (v != 0);
+
+    cout('$' | 0x80);
+    while (i > 0) {
+        cout(buf[--i] | 0x80);
+    }
+}
+
 void lwriteint(Value *ptr)
 {
-	putint(ptr->int_);
+    if (ptr->flags & F_HEX) {
+        puthex(ptr->int_);
+    } else {
+        putint(ptr->int_);
+    }
 }
 
 void lwritesym(Value *ptr)
 {
-	puts(ptr->sym);
+    puts(ptr->sym);
 }
 
 void lwritenative(Value *ptr)
@@ -384,12 +446,12 @@ void lwritelambda(Value *ptr)
 void lwrite(Value *);
 void lwritepair(Value *pair)
 {
-	putchar('(');
+    putchar('(');
     for (; !LISP_NILP(pair); pair = CDR(pair)) {
         lwrite(CAR(pair));
         if (!LISP_NILP(CDR(pair))) {
             if (gettype(CDR(pair)) == T_PAIR) {
-				putchar(' ');
+                putchar(' ');
             } else {
                 // Handle improper lists
                 puts(" . ");
@@ -398,7 +460,7 @@ void lwritepair(Value *pair)
             }
         }
     }
-	putchar(')');
+    putchar(')');
 }
 
 void lwrite(Value *ptr)
@@ -555,6 +617,51 @@ Value *native_div(Value *args)   { return ARITH(/); }
 // Miscellaneous.
 Value *native_eval(Value *args) { return eval(CAR(args), global_env); }
 
+// Memory + bit manipulation.
+#define LOGIC(op) mkint(CAR(args)->int_ op CADR(args)->int_)
+Value* native_or(Value *args) { return LOGIC(|); }
+Value* native_and(Value *args) { return LOGIC(&); }
+Value* native_xor(Value *args) { return LOGIC(^); }
+#undef LOGIC
+Value* native_hex(Value *args) { return mkhex(CAR(args)->int_); }
+Value* native_peek(Value *args)
+{
+    uint32_t addr = (uint32_t)CAR(args)->int_;
+
+    int s = 4;
+    Value* cdr = CDR(args);
+    if (cdr != NULL) {
+        s = CAR(cdr)->int_;
+        if (s > 4) s = 4;
+    }
+
+    int v = 0;
+    uint8_t* b = (uint8_t*)&v;
+    for (; s > 0; s--, addr++) {
+        *b++ = *(uint8_t*)addr;
+    }
+    return mkhex(v);
+}
+
+Value* native_poke(Value *args)
+{
+    uint32_t addr = (uint32_t)CAR(args)->int_;
+
+    int s = 4;
+    Value* cddr = CDDR(args);
+    if (cddr != NULL) {
+        s = CAR(cddr)->int_;
+        if (s > 4) s = 4;
+    }
+
+    int v = CADR(args)->int_;
+    for (; s > 0; s--, addr++) {
+        *((uint8_t*)addr) = v & 0xff;
+        v >>= 8;
+    }
+    return LISP_NIL;
+}
+
 int main()
 {
     Value *result;
@@ -575,13 +682,21 @@ int main()
     defnative(mksym("EVAL"), native_eval);
     defglobal(mksym("NIL"), LISP_NIL);
 
-	for (;;) {
+    // Memory + bit manipulation.
+    defnative(mksym("OR"), native_or);
+    defnative(mksym("AND"), native_and);
+    defnative(mksym("XOR"), native_xor);
+    defnative(mksym("HEX"), native_hex);
+    defnative(mksym("PEEK"), native_peek);
+    defnative(mksym("POKE"), native_poke);
+
+    for (;;) {
         setjmp(toplevel_escape);
         puts("> ");
         result = eval(lread(), global_env);
-		putchar('\r');
+        putchar('\r');
         lwrite(result);
-		putchar('\r');
+        putchar('\r');
     }
 
     return 0;

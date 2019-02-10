@@ -20,14 +20,18 @@ void puts(char* s) {
 
 void putint(int n) {
 	char buf[10]; // max 32-bit int is 10 decimal digits
+	int div = 10;
 	if (n < 0) {
 		cout('-' | 0x80);
+		div = -10;
 	}
+
 	int i = 0;
-	for (; n != 0; n = n / 10) {
-		int d = n % 10;
-		buf[i++] = '0' + (n % 10);
-	}
+	do {
+		buf[i++] = '0' + (n % div);
+		n /= div;
+	} while (n != 0);
+
 	while (i > 0) {
 		cout(buf[--i] | 0x80);
 	}
