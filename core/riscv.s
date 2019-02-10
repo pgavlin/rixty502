@@ -24,37 +24,37 @@
 	; vx0-vx31 correspond to the user-visible RISCV registers x0-x1. The simulator initializes x0 to 0 upon startup
 	; and ensures that simulated instructions never write to it.
 	vx0 = $80
-	vx1 = $84
-	vx2 = $88
-	vx3 = $8c
-	vx4 = $90
-	vx5 = $94
-	vx6 = $98
-	vx7 = $9c
-	vx8 = $a0
-	vx9 = $a4
-	vx10 = $a8
-	vx11 = $ac
-	vx12 = $b0
-	vx13 = $b4
-	vx14 = $b8
-	vx15 = $bc
-	vx16 = $c0
-	vx17 = $c4
-	vx18 = $c8
-	vx19 = $cc
-	vx20 = $d0
-	vx21 = $d4
-	vx22 = $d8
-	vx23 = $dc
-	vx24 = $e0
-	vx25 = $e4
-	vx26 = $e8
-	vx27 = $ec
-	vx28 = $f0
-	vx29 = $f4
-	vx30 = $f8
-	vx31 = $fc
+	vx1 = $81
+	vx2 = $82
+	vx3 = $83
+	vx4 = $84
+	vx5 = $85
+	vx6 = $86
+	vx7 = $87
+	vx8 = $88
+	vx9 = $89
+	vx10 = $8a
+	vx11 = $8b
+	vx12 = $8c
+	vx13 = $8d
+	vx14 = $8e
+	vx15 = $8f
+	vx16 = $90
+	vx17 = $91
+	vx18 = $92
+	vx19 = $93
+	vx20 = $94
+	vx21 = $95
+	vx22 = $96
+	vx23 = $97
+	vx24 = $98
+	vx25 = $99
+	vx26 = $9a
+	vx27 = $9b
+	vx28 = $9c
+	vx29 = $9d
+	vx30 = $9e
+	vx31 = $9f
 
 	; ldard loads the value of the rd field of the R-, I-, and U-type instruction formats into A. It expects the
 	; instruction to decode in vin. The result is suitable for indexing into the virtual registers starting at vx0.
@@ -79,8 +79,6 @@
 	lda vin+1
 	and #$0f
 	rol
-	asl
-	asl
 .endmacro
 
 	; ldars1 loads the value of the rs1 field of the R-, I-, and U-type instruction formats into A. It expects the
@@ -94,8 +92,6 @@
 	lda vin+2
 	and #$0f
 	rol
-	asl
-	asl
 .endmacro
 
 	; ldars2 loads the value of the rs2 field of the R-, I-, and U-type instruction formats into A. It expects the
@@ -125,8 +121,9 @@
 	lda vin+3
 	lsr
 	lda vin+2
-	and #$f0
 	ror
+	lsr
+	lsr
 	lsr
 .endmacro
 
@@ -142,15 +139,15 @@
 	lda vx0,y
 	opc vs2
 	sta vx0,x
-	lda vx0+1,y
+	lda vx0+32,y
 	opc vs2+1
-	sta vx0+1,x
-	lda vx0+2,y
+	sta vx0+32,x
+	lda vx0+64,y
 	opc vs2+2
-	sta vx0+2,x
-	lda vx0+3,y
+	sta vx0+64,x
+	lda vx0+96,y
 	opc vs2+3
-	sta vx0+3,x
+	sta vx0+96,x
 .endmacro
 
 .segment "CODE"
@@ -179,9 +176,9 @@ tl:	txa
 	; virtual registero to 0 and ensuring that it is never written.
 	lda #0
 	sta vx0
-	sta vx0+1
-	sta vx0+2
-	sta vx0+3
+	sta vx0+32
+	sta vx0+64
+	sta vx0+96
 
 	; Load the reset vector into the PC and go.
 	.import program
@@ -209,11 +206,11 @@ tl:	txa
 	; Copy the value to be shifted into vs1. We do this first to free up the Y register.
 	lda vx0,y
 	sta vs1
-	lda vx0+1,y
+	lda vx0+32,y
 	sta vs1+1
-	lda vx0+2,y
+	lda vx0+64,y
 	sta vs1+2
-	lda vx0+3,y
+	lda vx0+96,y
 	sta vs1+3
 
 	; Load the shift amount from vs2 and mask off its upper 27 bits. If the result is zero, simply copy vs1 to the
@@ -235,11 +232,11 @@ zero:
 	lda vs1
 	sta vx0,x
 	lda vs1+1
-	sta vx0+1,x
+	sta vx0+32,x
 	lda vs1+2
-	sta vx0+2,x
+	sta vx0+64,x
 	lda vs1+3
-	sta vx0+3,x
+	sta vx0+96,x
 	jmp addpc4
 
 	; sll is the shift kernel for an sll instruction. On entry to the kernel, vs1 contains the value to be
@@ -261,13 +258,13 @@ slldone:
 	sta vx0,x
 	lda vs1+1
 	rol
-	sta vx0+1,x
+	sta vx0+32,x
 	lda vs1+2
 	rol
-	sta vx0+2,x
+	sta vx0+64,x
 	lda vs1+3
 	rol
-	sta vx0+3,x
+	sta vx0+96,x
 	jmp addpc4
 
 	; sra is the shift kernel for an sra instruction. The contract is the same as that of the other kernels; see
@@ -287,13 +284,13 @@ sradone:
 	lda vs1+3
 	cmp #$80
 	ror
-	sta vx0+3,x
+	sta vx0+96,x
 	lda vs1+2
 	ror
-	sta vx0+2,x
+	sta vx0+64,x
 	lda vs1+1
 	ror
-	sta vx0+1,x
+	sta vx0+32,x
 	lda vs1
 	ror
 	sta vx0,x
@@ -313,13 +310,13 @@ srlloop:
 srldone:
 	lda vs1+3
 	lsr
-	sta vx0+3,x
+	sta vx0+96,x
 	lda vs1+2
 	ror
-	sta vx0+2,x
+	sta vx0+64,x
 	lda vs1+1
 	ror
-	sta vx0+1,x
+	sta vx0+32,x
 	lda vs1
 	ror
 	sta vx0,x
@@ -332,11 +329,11 @@ srldone:
 	sec
 	lda vx0,y
 	sbc vs2
-	lda vx0+1,y
+	lda vx0+32,y
 	sbc vs2+1
-	lda vx0+2,y
+	lda vx0+64,y
 	sbc vs2+2
-	lda vx0+3,y
+	lda vx0+96,y
 	sbc vs2+3
 	rts
 .endproc
@@ -382,9 +379,9 @@ sub:
 setrd:
 	sta vx0,x
 	lsr
-	sta vx0+1,x
-	sta vx0+2,x
-	sta vx0+3,x
+	sta vx0+32,x
+	sta vx0+64,x
+	sta vx0+96,x
 	jmp addpc4
 .endproc
 
@@ -430,12 +427,12 @@ srl:
 	lda #shift::srl-shift::zero
 	jmp shift
 srl31:
-	lda vx0+3,y
+	lda vx0+96,y
 	asl
 	lda #0
-	sta vx0+3,x
-	sta vx0+2,x
-	sta vx0+1,x
+	sta vx0+96,x
+	sta vx0+64,x
+	sta vx0+32,x
 	rol
 	sta vx0,x
 	jmp addpc4
@@ -449,13 +446,13 @@ sra:
 	jmp shift
 sra31:
 	lda #0
-	cmp vx0+3,y
+	cmp vx0+96,y
 	bmi @s
 	beq @s
 	lda #$ff
-@s:	sta vx0+3,x
-	sta vx0+2,x
-	sta vx0+1,x
+@s:	sta vx0+96,x
+	sta vx0+64,x
+	sta vx0+32,x
 	sta vx0,x
 	jmp addpc4
 .endproc
@@ -551,7 +548,7 @@ sra31:
 	bit vin+3
 	bpl s0
 	ora #$f0
-s0:	adc vx0+1,x
+s0:	adc vx0+32,x
 	sta vs1+1
 	lda vin+1 ; extract funct3
 	lsr
@@ -562,20 +559,29 @@ s0:	adc vx0+1,x
 	ldard
 	beq nw
 	jmp (jlxtable,x)
-nw:	lda #vs2  ; still need to do the load, even if we're targeting x0
-	jmp (jlxtable,x)
+
+nw:
+	; still need to do the load, even if targeting x0
+	lda jnwtable,x
+	tax
+	ldy #0
+rl:	lda (vs1),y
+	iny
+	dex
+	bne rl
+	jmp addpc4
 
 lxw:
 	tax
 	ldy #3
 	lda (vs1),y
-	sta vx0+3,x
+	sta vx0+96,x
 	dey
 	lda (vs1),y
-	sta vx0+2,x
+	sta vx0+64,x
 	dey
 	lda (vs1),y
-	sta vx0+1,x
+	sta vx0+32,x
 	dey
 	lda (vs1),y
 	sta vx0,x
@@ -585,15 +591,15 @@ lxh:
 	tax
 	ldy #1
 	lda (vs1),y
-	sta vx0+1,x
+	sta vx0+32,x
 	cmp #$80
 	dey
 	lda (vs1),y
 	sta vx0,x
 	bcc s1
 	dey
-s1:	sty vx0+2,x
-	sty vx0+3,x
+s1:	sty vx0+64,x
+	sty vx0+96,x
 	jmp addpc4
 
 lxb:
@@ -603,21 +609,21 @@ lxb:
 	sta vx0,x
 	bpl s2
 	dey
-s2:	sty vx0+1,x
-	sty vx0+2,x
-	sty vx0+3,x
+s2:	sty vx0+32,x
+	sty vx0+64,x
+	sty vx0+96,x
 	jmp addpc4
 
 lxhu:
 	tax
 	ldy #1
 	lda (vs1),y
-	sta vx0+1,x
+	sta vx0+32,x
 	dey
 	lda (vs1),y
 	sta vx0,x
-	sty vx0+2,x
-	sty vx0+3,x
+	sty vx0+64,x
+	sty vx0+96,x
 	jmp addpc4
 
 lxbu:
@@ -625,13 +631,15 @@ lxbu:
 	ldy #0
 	lda (vs1),y
 	sta vx0,x
-	sty vx0+1,x
-	sty vx0+2,x
-	sty vx0+3,x
+	sty vx0+32,x
+	sty vx0+64,x
+	sty vx0+96,x
 	jmp addpc4
 
 jlxtable:
 	.word lxb, lxh, lxw, lxw, lxbu, lxhu
+jnwtable:
+	.byte 1, 2, 4, 4, 2, 1
 .endproc
 
 	; opfence implements the MISC-MEM group.
@@ -687,13 +695,13 @@ skip:
 	lda vin+1
 	and #$f0
 	adc vpc+1   ; ldard leaves the carry clear
-	sta vx0+1,x
+	sta vx0+32,x
 	lda vin+2
 	adc vpc+2
-	sta vx0+2,x
+	sta vx0+64,x
 	lda vin+3
 	adc vpc+3
-	sta vx0+3,x
+	sta vx0+96,x
 skip:
 	jmp addpc4
 .endproc
@@ -717,7 +725,7 @@ skip:
 	bit vin+3
 	bpl s0
 	ora #$f0
-s0:	adc vx0+1,x
+s0:	adc vx0+32,x
 	sta vs1+1
 	lda vin+1 ; extract funct3
 	lsr
@@ -733,13 +741,13 @@ sxw:
 	lda vx0,x
 	sta (vs1),y
 	iny
-	lda vx0+1,x
+	lda vx0+32,x
 	sta (vs1),y
 	iny
-	lda vx0+2,x
+	lda vx0+64,x
 	sta (vs1),y
 	iny
-	lda vx0+3,x
+	lda vx0+96,x
 	sta (vs1),y
 	jmp addpc4
 sxh:
@@ -747,7 +755,7 @@ sxh:
 	lda vx0,x
 	sta (vs1),y
 	iny
-	lda vx0+1,x
+	lda vx0+32,x
 	sta (vs1),y
 	jmp addpc4
 sxb:
@@ -766,11 +774,11 @@ jsxtable:
 	tax
 	lda vx0,x
 	sta vs2
-	lda vx0+1,x
+	lda vx0+32,x
 	sta vs2+1
-	lda vx0+2,x
+	lda vx0+64,x
 	sta vs2+2
-	lda vx0+3,x
+	lda vx0+96,x
 	sta vs2+3
 	jmp alu
 .endproc
@@ -784,11 +792,11 @@ jsxtable:
 	sta vx0,x
 	lda vin+1
 	and #$f0
-	sta vx0+1,x
+	sta vx0+32,x
 	lda vin+2
-	sta vx0+2,x
+	sta vx0+64,x
 	lda vin+3
-	sta vx0+3,x
+	sta vx0+96,x
 skip:
 	jmp addpc4
 .endproc
@@ -807,14 +815,14 @@ skip:
 	lda vx0,y
 	cmp vx0,x
 	bne t0
-	lda vx0+1,y
-	cmp vx0+1,x
+	lda vx0+32,y
+	cmp vx0+32,x
 	bne t0
-	lda vx0+2,y
-	cmp vx0+2,x
+	lda vx0+64,y
+	cmp vx0+64,x
 	bne t0
-	lda vx0+3,y
-	cmp vx0+3,x
+	lda vx0+96,y
+	cmp vx0+96,x
 	bne t0
 t1:	lda #$10
 	bne t2
@@ -825,12 +833,12 @@ ne:	cmp #$60
 	sec
 	lda vx0,y
 	sbc vx0,x
-	lda vx0+1,y
-	sbc vx0+1,x
-	lda vx0+2,y
-	sbc vx0+2,x
-	lda vx0+3,y
-	sbc vx0+3,x
+	lda vx0+32,y
+	sbc vx0+32,x
+	lda vx0+64,y
+	sbc vx0+64,x
+	lda vx0+96,y
+	sbc vx0+96,x
 	bmi m0
 	bvs t1
 	lda #0
@@ -841,12 +849,12 @@ m0:	bvc t1
 s0:	sec
 	lda vx0,y
 	sbc vx0,x
-	lda vx0+1,y
-	sbc vx0+1,x
-	lda vx0+2,y
-	sbc vx0+2,x
-	lda vx0+3,y
-	sbc vx0+3,x
+	lda vx0+32,y
+	sbc vx0+32,x
+	lda vx0+64,y
+	sbc vx0+64,x
+	lda vx0+96,y
+	sbc vx0+96,x
 	bcc t1
 	lda #0
 t2:	eor vf3
@@ -900,13 +908,13 @@ sx:	ora #$f0
 	sta vx0,x
 	lda vpc+1
 	adc #0
-	sta vx0+1,x
+	sta vx0+32,x
 	lda vpc+2
 	adc #0
-	sta vx0+2,x
+	sta vx0+64,x
 	lda vpc+3
 	adc #0
-	sta vx0+3,x
+	sta vx0+96,x
 skip:	
 	rts
 .endproc
@@ -924,23 +932,23 @@ skip:
 	lda lsr4,y
 	bit vin+3
 	bmi s0     ; immediate byte 2 in a
-	adc vx0+1,x
+	adc vx0+32,x
 	sta vpc+1
 	lda #0     ; immediate byte 3 in a
-	adc vx0+2,x
+	adc vx0+64,x
 	sta vpc+2
 	lda #0     ; immediate byte 4 in a
-	adc vx0+3,x
+	adc vx0+96,x
 	sta vpc+3
 	jmp run
 s0:	ora #$f0   ; immediate byte 2 in a
-	adc vx0+1,x
+	adc vx0+32,x
 	sta vpc+1
 	lda #$ff   ; immediate byte 3 in a
-	adc vx0+2,x
+	adc vx0+64,x
 	sta vpc+2
 	lda #$ff   ; immediate byte 4 in a
-	adc vx0+3,x
+	adc vx0+96,x
 	sta vpc+3
 	jmp run
 .endproc
@@ -988,22 +996,22 @@ s0:	ora #$f0   ; immediate byte 3 in a
 .proc opsystem
 	lda vx10
 	sta tg
-	lda vx10+1
+	lda vx10+32
 	sta tg+1
-	lda vx11+3
+	lda vx11+96
 	pha
 	lda vx11
-	ldx vx11+1
-	ldy vx11+2
+	ldx vx11+32
+	ldy vx11+64
 	plp
 	.byte $20
 tg:	.byte $00,$00
 	sta vx10
-	stx vx10+1
-	sty vx10+2
+	stx vx10+32
+	sty vx10+64
 	php
 	pla
-	sta vx10+3
+	sta vx10+96
 	jmp addpc4
 .endproc
 
