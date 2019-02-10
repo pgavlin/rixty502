@@ -7,6 +7,7 @@ OBJCOPY=riscv64-unknown-elf-objcopy
 
 AS65=ca65
 LD65=ld65
+CPU65=65C02
 
 HOSTCC=clang
 
@@ -15,13 +16,13 @@ HOSTCC=clang
 all: bin/sim6502 bin/riscv.aiic.bin bin/disas.aiic.bin bin/disas.sim.img
 
 build/riscv.o: core/riscv.s
-	$(AS65) -g -o $@ $<
+	$(AS65) --cpu $(CPU65) -g -o $@ $<
 
 build/riscv.sim.o: core/riscv.s
-	$(AS65) -g -o $@ -D simulator=1 $<
+	$(AS65) --cpu $(CPU65) -g -o $@ -D simulator=1 $<
 
 build/sim.o: core/sim.s
-	$(AS65) -g -o $@ $<
+	$(AS65) --cpu $(CPU65) -g -o $@ $<
 
 bin/riscv.aiic.bin: build/riscv.o
 	$(LD65) -C core/aiic.cfg -o $@ -D program=0x4000 $<
@@ -51,7 +52,7 @@ build/ulisp.cc65: build/ulisp.srec
 	srec-to-cc65 -start 0x4000 <$< >$@
 
 build/ulisp.program.o: build/ulisp.cc65
-	$(AS65) -g -o $@ $<
+	$(AS65) --cpu $(CPU65) -g -o $@ $<
 
 bin/ulisp.sim.img: build/riscv.sim.o build/sim.o core/sim.cfg build/ulisp.program.o
 	$(LD65) -C core/sim.cfg --dbgfile bin/ulisp.sim.dbg -o $@ build/riscv.sim.o build/sim.o build/ulisp.program.o
@@ -72,7 +73,7 @@ build/hello.cc65: build/hello.srec
 	srec-to-cc65 -start 0x4000 <$< >$@
 
 build/hello.program.o: build/hello.cc65
-	$(AS65) -g -o $@ $<
+	$(AS65) --cpu $(CPU65) -g -o $@ $<
 
 bin/hello.sim.img: build/riscv.sim.o build/sim.o core/sim.cfg build/hello.program.o
 	$(LD65) -C core/sim.cfg --dbgfile bin/hello.sim.dbg -o $@ build/riscv.sim.o build/sim.o build/hello.program.o
@@ -93,7 +94,7 @@ build/hlisp.cc65: build/hlisp.srec
 	srec-to-cc65 -start 0x4000 <$< >$@
 
 build/hlisp.program.o: build/hlisp.cc65
-	$(AS65) -g -o $@ $<
+	$(AS65) --cpu $(CPU65) -g -o $@ $<
 
 bin/hlisp.sim.img: build/riscv.sim.o build/sim.o core/sim.cfg build/hlisp.program.o
 	$(LD65) -C core/sim.cfg --dbgfile bin/hlisp.sim.dbg -o $@ build/riscv.sim.o build/sim.o build/hlisp.program.o
@@ -114,7 +115,7 @@ build/disas.cc65: build/disas.srec
 	srec-to-cc65 -start 0x4000 <$< >$@
 
 build/disas.program.o: build/disas.cc65
-	$(AS65) -g -o $@ $<
+	$(AS65) --cpu $(CPU65) -g -o $@ $<
 
 bin/disas.sim.img: build/riscv.sim.o build/sim.o core/sim.cfg build/disas.program.o
 	$(LD65) -C core/sim.cfg --dbgfile bin/disas.sim.dbg -o $@ build/riscv.sim.o build/sim.o build/disas.program.o
@@ -126,7 +127,7 @@ bin/sim6502: core/sim6502.c
 	$(HOSTCC) -o $@ $<
 
 build/miniloader.o: loader/miniloader.s
-	$(AS65) -o $@ $<
+	$(AS65) --cpu $(CPU65) -o $@ $<
 
 build/miniloader: build/miniloader.o loader/miniloader.cfg
 	$(LD65) -C loader/miniloader.cfg -o $@ build/miniloader.o

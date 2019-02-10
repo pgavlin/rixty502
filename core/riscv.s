@@ -1,6 +1,7 @@
-	; rixty502: a RISCV interpreter for the 6502
+	; rixty502: a RISCV interpreter for the 65C02
 	;
-	; Currently operates at roughly 75 6502 instructions per RISCV instruction.
+	; Currently operates at roughly 200 6502 cycles per RISCV instruction. This works out to ~5000 instructions per
+	; second on an Apple //c.
 	;
 	; Reference will be made throughout to the RISC-V Instruction Set Manual Volume I, Version 2.2.
 
@@ -205,7 +206,7 @@ tl:	txa
 	; Store the offset into the target.
 	sta tg
 
-	; Copy the value to be shifted into vs1.
+	; Copy the value to be shifted into vs1. We do this first to free up the Y register.
 	lda vx0,y
 	sta vs1
 	lda vx0+1,y
@@ -273,9 +274,9 @@ slldone:
 	; the documentation of sllkernel for more information.
 sra:
 	beq sradone
-sraloop:
 	lda vs1+3
-	asl       ; Put the high-order bit of vs1 into C.
+sraloop:
+	cmp #$80 ; Put the high-order bit of vs1 into C.
 	ror vs1+3
 	ror vs1+2
 	ror vs1+1
@@ -344,14 +345,16 @@ srldone:
 	; bits 5 and 30 of the executing instruction. If the bit 5 is clear, the instruction is an addi. If bit 5 is set
 	; and bit 30 is clear, the instruction is an add. Otherwise, it is a sub.
 .proc aluaddsub
+	tax
 	lda #$60
 	bit vin
-	beq add
+	bne cksub
+	aluop adc  ; carry is clear from the ALU dispatcher
+	jmp addpc4
+cksub:
 	bit vin+3
 	bne sub
-add:
-	clc
-	aluop adc
+	aluop adc  ; carry is clear from the ALU dispatcher
 	jmp addpc4
 sub:
 	sec
@@ -361,6 +364,7 @@ sub:
 
 	; alusll implements the sll instruction. Essentially all of the work is done by the shift helper.
 .proc alusll
+	tax
 	lda #shift::sll-shift::zero
 	jmp shift
 .endproc
@@ -370,6 +374,7 @@ sub:
 	; match, then the first operand is greater than or equal to the second. Otherwise, the first operand is less than
 	; the second.
 .proc alusltu
+	tax
 	jsr cltkernel
 	lda #0
 	rol
@@ -388,6 +393,7 @@ setrd:
 	; then the first operand is greater than or equal to the second. Otherwise, the first operand is less than the
 	; second.
 .proc aluslt
+	tax
 	jsr cltkernel
 	bmi @m
 	bvs @s
@@ -400,6 +406,7 @@ setrd:
 
 	; aluxor implements the xor and xori instructions.
 .proc aluxor
+	tax
 	aluop eor
 	jmp addpc4
 .endproc
@@ -408,6 +415,7 @@ setrd:
 	; specified by the lower five bits of the second operand. If bit 30 of the executing instruction is set, an
 	; arithmetic shift is performed; otherwise, a logical shift is performed.
 .proc alusrlsra
+	tax
 	lda vin+3
 	and #$fe
 	bne sra
@@ -454,12 +462,14 @@ sra31:
 
 	; aluor implements the or and ori instructions.
 .proc aluor
+	tax
 	aluop ora
 	jmp addpc4
 .endproc
 
 	; aluand implements the and and andi instructions.
 .proc aluand
+	tax
 	aluop and
 	jmp addpc4
 .endproc
@@ -480,7 +490,6 @@ sra31:
 	lda (vpc),y
 	sta vin+3
 	dey
-	ldy #2
 	lda (vpc),y
 	sta vin+2
 	dey
@@ -494,74 +503,8 @@ sra31:
 	; ignoring them. Conveniently, the result of the mask is suitable as a branch offset into the instruction dispatch
 	; table.
 	and #$7c
-	sta tg
-	.byte $10 ; bpl
-tg:	.byte $00
-
-	; This is the instruction dispatch table. Each entry occupies four bytes.
-	jmp oplx
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opfence
-	nop
-	jmp opimm
-	nop
-	jmp opauipc
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opsx
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opop
-	nop
-	jmp oplui
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opbxx
-	nop
-	jmp opjalr
-	nop
-	jmp opinv
-	nop
-	jmp opjal
-	nop
-	jmp opsystem
-	nop
-	jmp opinv
-	nop
-	jmp opinv
-	nop
-	jmp opinv
+	tax
+	jmp (optab,x)
 .endproc
 
 	; addpc4 increments the virtual program counter by 4 bytes. In order to save cycles, each byte of the add is only
@@ -573,14 +516,13 @@ tg:	.byte $00
 	lda vpc
 	adc #4
 	sta vpc
-	bcs n
-	jmp run
-n:	adc vpc+1
+	bcc run
+	adc vpc+1
 	sta vpc+1
-	bcs n2
-	jmp run
-n2:	adc vpc+2
+	bcc run
+	adc vpc+2
 	sta vpc+2
+	bcc run
 	lda vpc+3
 	adc #0
 	sta vpc+3
@@ -589,56 +531,6 @@ n2:	adc vpc+2
 
 	; Below here is where things really start to get interesting. The code that follows implements most of the
 	; instruction-format-specific decoding as well as most of the operand-specific behaviors.
-
-	; alu is the common code shared by instructions in the OP-IMM and OP groups.
-.proc alu
-	; Load rd into A. If rd refers to x0, do nothing: an ALU operator is side-effect-free aside from writing the
-	; destiation register, and rd is never written.
-	ldard
-	beq skip
-	tax
-	lda vin+1 ; extract funct3
-	lsr
-	lsr
-	and #$1c
-	sta tg
-	ldars1
-	tay
-	.byte $10 ; bpl
-tg:	.byte $00
-	jmp aluaddsub
-	nop
-	jmp alusll
-	nop
-	jmp aluslt
-	nop
-	jmp alusltu
-	nop
-	jmp aluxor
-	nop
-	jmp alusrlsra
-	nop
-	jmp aluor
-	nop
-	jmp aluand
-skip:
-	jmp addpc4
-.endproc
-
-	; lsaddr is a helper that computes the effective address for a load or store. It expects the offset portion of the
-	; effective address in vs2 and writes the effective address to vs1. Note that because the virtual core's physical
-	; address space is limited to 16 bits, the upper 16 bits of the effective address are ignored.
-.proc lsaddr
-	ldars1
-	tax         ; load the offset of rs1 into X
-	lda vs2
-	adc vx0,x   ; carry is clear due to ldars1
-	sta vs1
-	lda vs2+1
-	adc vx0+1,x
-	sta vs1+1
-	rts
-.endproc
 
 	; opinv is the implementation of an invalid opcode. An invalid opcode will halt the simulator.
 .proc opinv
@@ -653,8 +545,7 @@ skip:
 	lda lsr4,y
 	ldy vin+3
 	ora asl4,y ; immediate byte 1 in a
-	clc
-	adc vx0,x
+	adc vx0,x  ; ldars1 leaves the carry clear
 	sta vs1
 	lda lsr4,y
 	bit vin+3
@@ -662,20 +553,20 @@ skip:
 	ora #$f0
 s0:	adc vx0+1,x
 	sta vs1+1
-	ldx vin+1 ; extract funct3
-	lda lsr4,x
-	and #$07
+	lda vin+1 ; extract funct3
+	lsr
+	lsr
+	lsr
+	and #$0e
 	tax
-	lda jlxtable,x
-	sta tg
 	ldard
-	bne wr
-	lda #vs2  ; still need to do the load, even if we're targeting x0
-wr:	tax
-	.byte $10 ; bpl
-tg:	.byte $00
+	beq nw
+	jmp (jlxtable,x)
+nw:	lda #vs2  ; still need to do the load, even if we're targeting x0
+	jmp (jlxtable,x)
 
 lxw:
+	tax
 	ldy #3
 	lda (vs1),y
 	sta vx0+3,x
@@ -691,6 +582,7 @@ lxw:
 	jmp addpc4
 
 lxh:
+	tax
 	ldy #1
 	lda (vs1),y
 	sta vx0+1,x
@@ -705,6 +597,7 @@ s1:	sty vx0+2,x
 	jmp addpc4
 
 lxb:
+	tax
 	ldy #0
 	lda (vs1),y
 	sta vx0,x
@@ -716,6 +609,7 @@ s2:	sty vx0+1,x
 	jmp addpc4
 
 lxhu:
+	tax
 	ldy #1
 	lda (vs1),y
 	sta vx0+1,x
@@ -727,6 +621,7 @@ lxhu:
 	jmp addpc4
 
 lxbu:
+	tax
 	ldy #0
 	lda (vs1),y
 	sta vx0,x
@@ -736,7 +631,7 @@ lxbu:
 	jmp addpc4
 
 jlxtable:
-	.byte lxb-lxw, lxh-lxw, 0, 0, lxbu-lxw, lxhu-lxw
+	.word lxb, lxh, lxw, lxw, lxbu, lxhu
 .endproc
 
 	; opfence implements the MISC-MEM group.
@@ -759,7 +654,27 @@ bz:	sta vs2+3 ; imm[3] = fill
 	ldx vin+2
 	ora lsr4,x
 	sta vs2
-	jmp alu
+.endproc
+
+	; alu is the common code shared by instructions in the OP-IMM and OP groups.
+.proc alu
+	ldars1
+	tay
+
+	lda vin+1 ; extract funct3
+	lsr
+	lsr
+	and #$1c
+	tax
+
+	; Load rd into A. If rd refers to x0, do nothing: an ALU operator is side-effect-free aside from writing the
+	; destiation register, and rd is never written.
+	ldard
+	beq skip
+	jmp (alutab,x)
+
+skip:
+	jmp addpc4
 .endproc
 
 	; opauipc implements the auipc instruction.
@@ -767,12 +682,11 @@ bz:	sta vs2+3 ; imm[3] = fill
 	ldard
 	beq skip
 	tax
-	clc
 	lda vpc
 	sta vx0,x
 	lda vin+1
 	and #$f0
-	adc vpc+1
+	adc vpc+1   ; ldard leaves the carry clear
 	sta vx0+1,x
 	lda vin+2
 	adc vpc+2
@@ -806,35 +720,45 @@ skip:
 	ora #$f0
 s0:	adc vx0+1,x
 	sta vs1+1
-	ldx vin+1 ; extract funct3
-	lda lsr4,x
-	and #$07
+	lda vin+1 ; extract funct3
+	lsr
+	lsr
+	lsr
+	and #$0e
 	tax
-	lda jsxtable,x
-	sta tg
+	ldy #0
 	ldars2
-	tax
-	.byte $10 ; bpl
-tg:	.byte $00
+	jmp (jsxtable,x)
 sxw:
-	ldy #3
-	lda vx0+3,x
+	tax
+	lda vx0,x
 	sta (vs1),y
-	ldy #2
-	lda vx0+2,x
-	sta (vs1),y
-sxh:
-	ldy #1
+	iny
 	lda vx0+1,x
 	sta (vs1),y
+	iny
+	lda vx0+2,x
+	sta (vs1),y
+	iny
+	lda vx0+3,x
+	sta (vs1),y
+	jmp addpc4
+sxh:
+	tax
+	lda vx0,x
+	sta (vs1),y
+	iny
+	lda vx0+1,x
+	sta (vs1),y
+	jmp addpc4
 sxb:
-	ldy #0
+	tax
 	lda vx0,x
 	sta (vs1),y
 	jmp addpc4
 
 jsxtable:
-	.byte sxb-sxw, sxh-sxw, 0
+	.word sxb, sxh, sxw
 .endproc
 
 	; opop implements the OP group.
@@ -972,9 +896,8 @@ sx:	ora #$f0
 	ldard
 	beq skip
 	tax
-	clc
 	lda vpc
-	adc #4
+	adc #4      ; ldard leaves the carry clear
 	sta vx0,x
 	lda vpc+1
 	adc #0
@@ -1027,8 +950,8 @@ s0:	ora #$f0   ; immediate byte 2 in a
 	jsr jalrd ; pc+4 -> rd
 	lda vin+2
 	tax
+	and #$10
 	lsr
-	and #$08
 	sta vs2
 	lda vin+3
 	and #$7f
@@ -1036,8 +959,7 @@ s0:	ora #$f0   ; immediate byte 2 in a
 	lda lsr4,x
 	ora asl4,y
 	and #$fe   ; immediate byte 1 in a
-	clc
-	adc vpc
+	adc vpc    ; carry cleared by earlier lsr
 	sta vpc
 	lda vin+1
 	and #$f0
@@ -1092,3 +1014,88 @@ lsr4:
 	.res 256
 asl4:
 	.res 256
+
+.segment "DATA"
+	.align 256
+optab:
+	.word oplx
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opfence
+	.word 0
+	.word opimm
+	.word 0
+	.word opauipc
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opsx
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opop
+	.word 0
+	.word oplui
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opbxx
+	.word 0
+	.word opjalr
+	.word 0
+	.word opinv
+	.word 0
+	.word opjal
+	.word 0
+	.word opsystem
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+	.word opinv
+	.word 0
+alutab:
+	.word aluaddsub
+	.word 0
+	.word alusll
+	.word 0
+	.word aluslt
+	.word 0
+	.word alusltu
+	.word 0
+	.word aluxor
+	.word 0
+	.word alusrlsra
+	.word 0
+	.word aluor
+	.word 0
+	.word aluand
+	.word 0
