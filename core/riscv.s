@@ -708,11 +708,10 @@ skip:
 	lda vin ; extract the store immediate
 	asl
 	lda vin+1
+	and #$0f  ; mask off upper four bits
 	rol
-	and #$1f  ; mask off upper three bits
 	ora asl4,y
-	clc
-	adc vx0,x
+	adc vx0,x ; carry is clear from the rol above
 	sta vs1
 	lda lsr4,y
 	bit vin+3
