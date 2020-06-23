@@ -10,19 +10,21 @@
 	; The user-accessible registers are stored in the upper 128 bytes of the zero page. All multi-byte values are
 	; stored in little-endian format. The virtual processor shares an address space with the actual processor.
 
-	; TODO:
-	; - remove the halt flag. instead, use ecall to halt the core. this saves four cycles per instruction.
-	; - change opcode dispatch to use a table. this saves two or three cycles per instruction.
-	; - change ALU dispatch to use a table. This will save space, time, etc.
-
-	vpc = $00 ; The virtual program counter holds the RISCV address of the currently executing instruction.
-	vin = $04 ; The virtual instruction register holds the currently executing instruction.
+	vpc = $00 ; The virtual program counter holds the address of the currently executing RISCV instruction.
+	vin = $04 ; The virtual instruction register holds the currently executing RISCV instruction.
 	vf3 = $08 ; vf3 corresponds to the `funct3` field of the RISCV R-, I-, and S-type instruction formats.
 	vs1 = $0c ; vs1 operates as the first operand and 4-byte accumulator for many internal ALU operations.
 	vs2 = $10 ; vs2 operates as the second operand for many internal ALU operations.
 
 	; vx0-vx31 correspond to the user-visible RISCV registers x0-x1. The simulator initializes x0 to 0 upon startup
 	; and ensures that simulated instructions never write to it.
+	;
+	; The virtual register file is organized into four planes. Each plane contains the nth byte of every virtual
+	; register: plane 0 contains each register's first byte, plane 1 the second, and so on. This allows the register
+	; file to be indexed without extra shifting. For example, if we are accessing register x5, we need to access the
+	; bytes at addresses $80+5, $a0+5, $c0+5, and $e0+5. If the register file was organized as an array of four-byte
+	; values, accessing the same register would require accessing the bytes at $80+5*4+0, $80+5*4+1, $80+5*4+2, and
+	; $80+5*4+3. This requires two more shifts when calculating the base address than the plane-oriented approach.
 	vx0 = $80
 	vx1 = $81
 	vx2 = $82
@@ -193,8 +195,9 @@ tl:	txa
 
 	; The following section contains the implementation of the various ALU operations required by the RISC-V
 	; specification. These operations expect the offset of their first operand in Y, the value of their second operand
-	; in vs2, and the offset of their destination register in X. The ALU operations themselves are preceded by two
-	; helpers, shift and cltc, that are used in the implementation of various instructions.
+	; in vs2, and the offset of their destination register in X. The first operand may be a virtual register or vs1.
+	; The ALU operations themselves are preceded by two helpers, shift and cltkernel, that are used in the implementation
+	; of various instructions.
 
 	; shift implements the shift loop. It expects the offset from the shiftzero symbol to the shift kernel in A, the
 	; offset of the register that contains the value to shift in Y, the shift amount in vs2, and the offset of the
@@ -241,7 +244,7 @@ zero:
 
 	; sll is the shift kernel for an sll instruction. On entry to the kernel, vs1 contains the value to be
 	; shifted, Y contains the shift amount minus 1, and X contains the offset of the destination register.
-	; The shift count is prederemented so that the value to shift can be shifted left one as it is copied into the
+	; The shift count is predecremented so that the value to shift can be shifted left one as it is copied into the
 	; destination, which is slightly faster than the RMW operators used by the shift loop.
 sll:
 	beq slldone
@@ -268,7 +271,7 @@ slldone:
 	jmp addpc4
 
 	; sra is the shift kernel for an sra instruction. The contract is the same as that of the other kernels; see
-	; the documentation of sllkernel for more information.
+	; the documentation of sll for more information.
 sra:
 	beq sradone
 	lda vs1+3
@@ -297,7 +300,7 @@ sradone:
 	jmp addpc4
 
 	; srl is the shift kernel for an srl instruction. The contract is the same as that of the other kernels; see
-	; the documentation of sllkernel for more information.
+	; the documentation of sll for more information.
 srl:
 	beq srldone
 srlloop:
@@ -428,13 +431,13 @@ srl:
 	jmp shift
 srl31:
 	lda vx0+96,y
-	asl
-	lda #0
+	asl          ; Put the high bit of the source register into C
+	lda #0       ; Zero out the high 3 bytes of the destination register
 	sta vx0+96,x
 	sta vx0+64,x
 	sta vx0+32,x
-	rol
-	sta vx0,x
+	rol          ; Put the high bit of the source register into the low bit of the accumulator
+	sta vx0,x    ; Store the accumulator into the low byte of the destination register
 	jmp addpc4
 
 sra:
@@ -445,6 +448,17 @@ sra:
 	lda #shift::sra-shift::zero
 	jmp shift
 sra31:
+	; The result of a 31-bit arithmetic right shift is either zero (if the value in the source register is positive)
+	; or (1<<32)-1 (if the value is negative). In both cases, all of the bytes of the destination register will hold
+	; the same value--either 0 or 0xff. We use the high bit of the source register (i.e its sign bit) to determine
+	; which value to use for the fill. In C, the algorithm is:
+	;
+	;     uint32_t fill = 0;
+	;     if (fill <= vx[Y]) {
+	;         fill = 0xffffffff;
+	;     }
+	;     vx[X] = fill;
+	;
 	lda #0
 	cmp vx0+96,y
 	bmi @s
@@ -508,13 +522,15 @@ sra31:
 	; executed if necessary (i.e. if there is a carry out from the previous byte).
 .proc addpc4
 	; Add four to the least significant byte of the VPC. If there is no carry out, fall through and jump back to the
-	; top of run. If there is a carry out, repeat for the next three bytes of the VPC.
+	; top of run. If there is a carry out, repeat for the next three bytes of the VPC. Note that this code requires
+	; that the value in the VPC is always four-byte aligned: it makes the assumption that if the carry is set, then
+	; the accumulator must be set to 0, which may not be true if the VPC is not properly aligned.
 	clc
 	lda vpc
 	adc #4
 	sta vpc
 	bcc run
-	adc vpc+1
+	adc vpc+1 ; A must be 0, assuming that the value in the VPC is 4-byte aligned.
 	sta vpc+1
 	bcc run
 	adc vpc+2
