@@ -550,34 +550,50 @@ sra31:
 	rts
 .endproc
 
-	; oplx implements the LOAD group.
+	; oplx implements the LOAD group. This includes the lw, lh, lhu, lb, and lbu instructions. As per the RISC-V spec,
+	; LOAD instructions are encoded using the I-type instruction format. The funct3 field indicates the width and
+	; sign-extension behavior of the load. This field is extracted and used as the index into a jump table to transfer
+	; control to the appropriate load kernel. Each kernel is implemented as an unrolled loop. Loads that target x0 are
+	; special-cased: though the load must execute, it must not write to the vx0 virtual register. These loads do not
+	; use the jump table, and instead use a load width table and a loop.
+	;
+	; The first part of this procedure is concerned with calculating the effective address for the load. This address
+	; is obtained by adding the value in the base address register (rs1) and the sign-extended 12-bit immediate present
+	; in the instruction. Because the 65C02 has a 16-bit address space, only the low 16 bits of the effective address
+	; are computed. The effective address is stored in vs1.
+	;
+	; Obtaining the sign-extended immediate requires some bit shifting. These shifts are accelerated using the
+	; lsr4/asr4 tables. The result of indexing these tables with a byte value returns the value shifted right or left
+	; by 4 bits, respectively.
 .proc oplx
 	ldars1
-	tax
-	ldy vin+2
-	lda lsr4,y
-	ldy vin+3
-	ora asl4,y ; immediate byte 1 in a
-	adc vx0,x  ; ldars1 leaves the carry clear
-	sta vs1
-	lda lsr4,y
-	bit vin+3
-	bpl s0
-	ora #$f0
-s0:	adc vx0+32,x
-	sta vs1+1
-	lda vin+1 ; extract funct3
+	tax          ; Put the offset of the source register in X.
+	ldy vin+2    ; Bits 0-3 of the offset are in the upper 4 bits of the instruction's 3rd byte.
+	lda lsr4,y   ; Shift the instruction's 3rd byte right by 4, moving bits 0-3 of the offset into place.
+	ldy vin+3    ; Bits 4-7 of the offset are in the lower 4 bits of the instruction's 4th byte.
+	ora asl4,y   ; Shift the instruction's 4th byte left by 4 and OR it with A to form the low byte of the offset.
+	adc vx0,x    ; Add the low byte of the offset with the low byte of the base register. ldars1 leaves the carry clear.
+	sta vs1      ; Store the low byte of the effective address into the low byte of vs1.
+	lda lsr4,y   ; Shift the fourth byte of the instruction right by 4, moving bits 8-11 of the offset into place in A.
+	bit vin+3    ; Put the offset's sign bit into N.
+	bpl s0       ; If the sign bit is zero, skip sign extension: bits 12-15 of the offset are already zero.
+	ora #$f0     ; If the sign bit is one, sign extend the offset by setting bits 12-15 to 1.
+s0:	adc vx0+32,x ; Add the second byte of the offset with the second byte of the base register.
+	sta vs1+1    ; Store the second byte of the effective address into the second byte of vs1.
+	lda vin+1    ; Put funct3 into A, then shift and mask it to form the jump/width table index.
 	lsr
 	lsr
 	lsr
 	and #$0e
-	tax
-	ldard
-	beq nw
-	jmp (jlxtable,x)
+	tax              ; Put the table index into X.
+	ldard            ; Load the offset of the destination register into A.
+	beq nw           ; If the destination register is x0, branch to the load-only loop.
+	jmp (jlxtable,x) ; Otherwise, jump to the appropriate load kernel.
 
 nw:
-	; still need to do the load, even if targeting x0
+	; We still need to perform the load when the destination register is x0, as the load may have side effects.
+	; This is rare enough in practice that it's not worth using load kernels: instead, we use a table that maps the
+	; width field to the number of bytes we need to load and loop.
 	lda jnwtable,x
 	tax
 	ldy #0
