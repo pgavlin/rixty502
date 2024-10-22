@@ -173,6 +173,7 @@
 //6502 CPU registers
 uint16_t pc;
 uint8_t sp, a, x, y, status;
+uint8_t kill;
 
 
 //helper variables
@@ -1074,6 +1075,10 @@ void write6502(uint16_t address, uint8_t value) {
 	memory[address] = value;
 }
 
+void handle_sigint(int _) {
+	kill = 1;
+}
+
 int main(int argc, char *argv[]) {
 	// reset the RISCV instruction count
 	riscv_instructions = 0;
@@ -1091,34 +1096,11 @@ int main(int argc, char *argv[]) {
 	}
 
 	// read in each chunk until EOF
-	uint8_t buf[2];
-	ssize_t offset = 0;
-	for (;;) {
-		// read the address
-		ssize_t n = read(prog, buf, 2);
-		if (n != 2) {
-			if (n == 0) {
-				break;
-			}
-			fprintf(stderr, "failed to read program\n");
-			return -1;
-		}
-		uint16_t address = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
-
-		n = read(prog, buf, 2);
-		if (n != 2) {
-			fprintf(stderr, "failed to read program\n");
-			return -1;
-		}
-		uint16_t len = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
-
-		n = read(prog, &memory[address], (size_t)len);
-		if (n != (ssize_t)(size_t)len) {
-			fprintf(stderr, "failed to read program\n");
-			return -1;
-		}
-
-		offset += 4 + (ssize_t)len;
+	ssize_t offset = 0x803;
+	ssize_t n = read(prog, &memory[offset], sizeof(memory) - offset);
+	if (n <= 0) {
+		fprintf(stderr, "failed to read program\n");
+		return -1;
 	}
 
 	// Put the terminal in raw mode.
@@ -1148,19 +1130,22 @@ int main(int argc, char *argv[]) {
 	mach_timebase_info_data_t info;
 	mach_timebase_info(&info);
 
+	kill = 0;
+	signal(SIGINT, handle_sigint);
+
 	// run the program!
 	reset6502();
 	profile[pc]++;
 	subroutine_stack[current_subroutine] = pc;
-	while ((status & FLAG_INTERRUPT) == 0) {
+	while ((status & FLAG_INTERRUPT) == 0 && !kill) {
 		uint64_t s = mach_absolute_time();
 		uint32_t st = clockticks6502;
 		uint8_t opc = memory[pc];
 
 		riscv_instruction_trapped = 0;
 
-//		fprintf(stderr, "pc: 0x%04x, opc: %02x %s, a: 0x%02x, x: 0x%02x, y: 0x%02x, s: 0x%02x, p: 0x%02x\n", pc, opc, opnames[opc], a, x, y, sp, status);
-//		fflush(stderr);
+		//fprintf(stderr, "pc: 0x%04x, opc: %02x %s, a: 0x%02x, x: 0x%02x, y: 0x%02x, s: 0x%02x, p: 0x%02x\n", pc, opc, opnames[opc], a, x, y, sp, status);
+		//fflush(stderr);
 		step6502();
 
 		if(riscv_instruction_trapped) {
@@ -1203,9 +1188,13 @@ int main(int argc, char *argv[]) {
 	}
 
 	printf("\n");
-	printf("6502 cycles: %d\n", clockticks6502);
-	printf("6502 instrs: %d\n", instructions);
+	printf("6502 cycles:  %d\n", clockticks6502);
+	printf("6502 instrs:  %d\n", instructions);
 	printf("RISCV instrs: %d\n", riscv_instructions);
+	if (riscv_instructions > 0) {
+		printf("CPI:          %f\n", (double)clockticks6502 / (double)riscv_instructions);
+		printf("IPI:          %f\n", (double)instructions / (double)riscv_instructions);
+	}
 
 	tcsetattr(STDIN_FILENO, TCSADRAIN, &termios);
 	return a;

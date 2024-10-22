@@ -175,7 +175,7 @@ tl:	txa
 	bne tl
 
 	; Set vx0 to 0. RISC-V requires that the x0 register is always 0; the simulator implements this by initializing its
-	; virtual registero to 0 and ensuring that it is never written.
+	; virtual registers to 0 and ensuring that it is never written.
 	lda #0
 	sta vx0
 	sta vx0+32
